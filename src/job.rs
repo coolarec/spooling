@@ -24,7 +24,9 @@ pub enum JobStatus {
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Job {
-    pub print_id: u32,
+    pub job_id: usize,
+    pub priority:u32,
+    pub team_name:String,
     pub file_name: String,
     pub submit_time: DateTime<Utc>,
     pub file_content: String,
@@ -36,15 +38,21 @@ pub struct Job {
 
 impl Job {
     pub fn new(
-        print_id: u32,
-        file_name: String,
+        priority: u32,
+        team_name:String,
         submit_time: DateTime<Utc>,
         file_content: String,
         color: bool,
     ) -> Self {
-        TOTAL_TASKS.fetch_add(1, AtomicOrdering::SeqCst);
+        let job_id=TOTAL_TASKS.fetch_add(1, AtomicOrdering::SeqCst);
+        
+        let timestamp = submit_time.format("%Y%m%d_%H%M%S").to_string();
+        let file_name = format!("{}_{}_{}", team_name, timestamp, job_id);
+        
         Self {
-            print_id,
+            job_id,
+            priority,
+            team_name,
             file_name,
             submit_time,
             file_content,
@@ -54,6 +62,7 @@ impl Job {
             end_print_time: None,
         }
     }
+
 
     pub fn start_printing(&mut self) {
         self.status = JobStatus::Printing;
@@ -71,7 +80,7 @@ impl Job {
     pub fn display(&self) {
         println!(
             "任务ID: {}, 文件: {}, 提交时间: {}, 彩色: {}, 状态: {:?}",
-            self.print_id,
+            self.job_id,
             self.file_name,
             self.submit_time.format("%Y-%m-%d %H:%M:%S"),
             self.color,
@@ -82,14 +91,15 @@ impl Job {
 
 impl PartialEq for Job {
     fn eq(&self, other: &Self) -> bool {
-        self.print_id == other.print_id && self.submit_time == other.submit_time
+        self.priority == other.priority && self.submit_time == other.submit_time
     }
 }
+
 impl Eq for Job {}
 
 impl Ord for Job {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.print_id.cmp(&other.print_id) {
+        match self.priority.cmp(&other.priority) {
             Ordering::Equal => self.submit_time.cmp(&other.submit_time),
             other_order => other_order,
         }

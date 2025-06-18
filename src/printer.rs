@@ -62,7 +62,7 @@ impl Printer{
             doc.push(p);
         }
 
-        doc.render_to_file(&format!("{}.pdf", file_name))
+        doc.render_to_file(&format!("./output/{}.pdf", file_name))
             .expect("Failed to write PDF file");
         
         //模拟打印，一份文件等待10s

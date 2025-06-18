@@ -14,7 +14,7 @@ pub fn stats() -> (usize, usize) {
         COMPLETED_TASKS.load(AtomicOrdering::SeqCst),
     )
 }
-
+///  四种工作状态
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize,Clone)]
 pub enum JobStatus {
     Waiting,      // 等待打印
@@ -22,6 +22,7 @@ pub enum JobStatus {
     Completed,    // 打印完成
     SubmitFailed, // 提交失败
 }
+
 #[derive(Debug, Serialize, Deserialize,Clone)]
 pub struct Job {
     pub job_id: usize,

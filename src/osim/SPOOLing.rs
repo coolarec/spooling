@@ -91,10 +91,15 @@ impl<T> Buffer<T> {
 
     // 阻塞取出
     pub fn pop(&self) -> T {
+        // print!("1-------------\n");
         let mut queue = self.queue.lock().unwrap();
+        // print!("2-------------\n");
         while queue.is_empty() {
+            // print!("3-------------\n");
             queue = self.ready.wait(queue).unwrap();
+            // print!("4-------------\n");
         }
+        // print!("5-------------\n");
         queue.pop_front().unwrap()
     }
 
@@ -283,7 +288,7 @@ impl SPOOLing {
                         .unwrap()
                         .insert(job.job_id as u64, job.clone());
 
-                    let id=job.job_id;
+                    let id = job.job_id;
                     output_well.push_blocking(job);
                     println!("[INFO] Job {} 推入输出井", id);
                 }
@@ -311,45 +316,21 @@ impl SPOOLing {
 
             thread::spawn(move || {
                 loop {
+                    print!("push---------\n");
                     let job = output_buffer.pop(); // 阻塞
+                    print!("push down---------\n");
+                    let job_id = job.job_id;
+                    let mut job_clone = job.clone();
+                    let printer_clone = printer_arc.clone();
+                    let status_map = status_map.clone();
 
-                    println!(
-                        "[INFO] 输出缓冲区中获取 Job {}，准备检查打印机状态",
-                        job.job_id
-                    );
-
-                    loop {
-                        match printer_arc.get_status() {
-                            PrinterStatus::Free => {
-                                println!("[INFO] 打印机空闲，开始提交 Job {} 打印任务", job.job_id);
-                                let job_id = job.job_id;
-                                let mut job_clone = job.clone();
-                                let printer_clone = printer_arc.clone();
-                                let status_map = status_map.clone();
-
-                                thread::spawn(move || {
-                                    println!("[INFO] 打印线程启动：Job {}", job_id);
-                                    if printer_clone.submit_task(job_clone.clone()).is_ok() {
-                                        job_clone.complete();
-                                        println!(
-                                            "[SUCCESS] Job {} 打印成功，状态更新为已完成",
-                                            job_id
-                                        );
-                                    } else {
-                                        job_clone.status = JobStatus::SubmitFailed;
-                                        println!("[ERROR] Job {} 打印失败，状态更新为失败", job_id);
-                                    }
-
-                                    status_map.lock().unwrap().insert(job_id as u64, job_clone);
-                                });
-
-                                break; // 去取下一个任务
-                            }
-                            PrinterStatus::Printing => {
-                                // println!("[INFO] 打印机忙碌中，等待 Job {} 打印...", job.job_id);
-                                // 省略 sleep，如果 pop 是阻塞的，我们只重试检查状态
-                            }
-                        }
+                    println!("[INFO] 打印线程启动：Job {}", job_id);
+                    if printer_clone.submit_task(job_clone.clone()).is_ok() {
+                        job_clone.complete();
+                        println!("[SUCCESS] Job {} 打印成功，状态更新为已完成", job_id);
+                    } else {
+                        job_clone.status = JobStatus::SubmitFailed;
+                        println!("[ERROR] Job {} 打印失败，状态更新为失败", job_id);
                     }
                 }
             });

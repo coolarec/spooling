@@ -3,7 +3,7 @@ mod printer;
 mod osim;
 
 use actix_web::{web, App, HttpServer, Responder, HttpResponse};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use chrono::Utc;
 use osim::SPOOLing::{rawJob, SPOOLing};
 use crate::printer::Printer;

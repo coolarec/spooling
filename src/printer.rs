@@ -66,7 +66,7 @@ impl Printer{
             .expect("Failed to write PDF file");
         
         //模拟打印，一份文件等待10s
-        thread::sleep(Duration::from_secs(10));
+        // thread::sleep(Duration::from_secs(10));
 
         Ok(())
     }
@@ -87,15 +87,15 @@ impl Printer{
         let job_clone = job.clone();
 
         let printer_arc = Arc::clone(self);
-        thread::spawn(move || {
-            let mut res = String::new();
-            for (count, line) in job_clone.file_content.lines().enumerate() {
-                res += &format!("{:>3}: {}\n", count + 1, line);
-            }
-            let _ = printer_arc.print_file(&res, &job_clone.file_name);
-            printer_arc.status.store(PrinterStatus::Free as usize, Ordering::SeqCst);
-            printer_arc.printed_count.fetch_add(1, Ordering::SeqCst);
-        });
+        // thread::spawn(move || {
+        let mut res = String::new();
+        for (count, line) in job_clone.file_content.lines().enumerate() {
+            res += &format!("{:>3}: {}\n", count + 1, line);
+        }
+        let _ = printer_arc.print_file(&res, &job_clone.file_name);
+        printer_arc.status.store(PrinterStatus::Free as usize, Ordering::SeqCst);
+        printer_arc.printed_count.fetch_add(1, Ordering::SeqCst);
+        // });
 
         Ok(job_id)
     }

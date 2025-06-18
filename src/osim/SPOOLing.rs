@@ -1,12 +1,12 @@
-use crate::job::Job;
-use crate::printer::Printer;
+use crate::job::{Job, JobStatus};
+use crate::printer::{Printer, PrinterStatus};
 use chrono::{DateTime, Utc};
 use std::cmp::Ordering;
 use std::cmp::Reverse; // 用于反转比较实现小根堆
 use std::collections::BinaryHeap;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Condvar, Mutex};
-use std::thread;
+use std::{thread, time::Duration};
 
 pub struct rawJob {
     pub priority: u32,
@@ -210,7 +210,7 @@ impl SPOOLing {
 
     pub fn submit_job(&self, data: rawJob) -> Result<usize, String> {
         // 创建新的 Job
-        let job = Job::new(
+        let mut job = Job::new(
             data.priority,
             data.team_name,
             data.submit_time,
@@ -219,6 +219,12 @@ impl SPOOLing {
         );
 
         let job_id = job.job_id;
+        job.status = JobStatus::Waiting;
+        let status_map = self.status_map.clone();
+        status_map
+            .lock()
+            .unwrap()
+            .insert(job.job_id as u64, job.clone());
 
         // 尝试推入输入缓冲区
         match self.input_buffer.try_push(job) {
@@ -226,81 +232,127 @@ impl SPOOLing {
                 println!("任务 {} 已提交到输入缓冲区", job_id);
                 Ok(job_id)
             }
-            Err(_) => {
+            Err(mut job) => {
                 println!("缓冲区已满，任务 {} 提交失败", job_id);
+
+                job.status = crate::job::JobStatus::SubmitFailed;
+                status_map
+                    .lock()
+                    .unwrap()
+                    .insert(job.job_id as u64, job.clone());
+
                 Err("缓冲区已满".to_string())
             }
         }
     }
 
     pub fn start_workers(&self, printer: Arc<Printer>) {
-        // 输入缓冲区→输入井转移线程
-        let input_buffer = self.input_buffer.clone();
-        let input_well = self.input_well.clone();
-        let status_map = self.status_map.clone();
+        // 输入缓冲区 → 输入井
+        {
+            let input_buffer = self.input_buffer.clone();
+            let input_well = self.input_well.clone();
+            thread::spawn(move || {
+                loop {
+                    let job = input_buffer.pop(); // 阻塞
+                    println!("[INFO] 输入缓冲区弹出 Job {}，准备放入输入井", job.job_id);
+                    input_well.push_blocking(job);
+                    println!("[INFO] Job 已成功进入输入井");
+                }
+            });
+        }
 
-        thread::spawn(move || {
-            loop {
-                // 从输入缓冲区获取作业
-                let job = input_buffer.pop();
-                // 更新状态映射
-                status_map
-                    .lock()
-                    .unwrap()
-                    .insert(job.job_id as u64, job.clone());
-                // 放入输入井
-                input_well.push_blocking(job);
-            }
-        });
+        // 输入井 → 输出井
+        {
+            let input_well = self.input_well.clone();
+            let output_well = self.output_well.clone();
+            let status_map = self.status_map.clone();
+            thread::spawn(move || {
+                loop {
+                    let mut job = input_well.pop_blocking(); // 阻塞
+                    println!("[INFO] 输入井中取出 Job {}，准备格式化内容", job.job_id);
 
-        // 处理线程（从输入井取，打印，放入输出井）
-        let input_well = self.input_well.clone();
-        let output_well = self.output_well.clone();
-        let status_map = self.status_map.clone();
-        let printer_clone = printer.clone();
+                    let formatted = format!(
+                        "\\\\ team_name: {}\n\\\\ submit_time: {}\n\n{}",
+                        job.team_name, job.submit_time, job.file_content
+                    );
+                    job.file_content = formatted;
 
-        thread::spawn(move || {
-            loop {
-                // 从输入井取出最高优先级作业
-                let mut job = input_well.pop_blocking();
+                    println!("[INFO] Job {} 格式化完成，状态写入状态表", job.job_id);
+                    status_map
+                        .lock()
+                        .unwrap()
+                        .insert(job.job_id as u64, job.clone());
 
-                // 更新作业状态为打印中
-                job.start_printing();
-                status_map
-                    .lock()
-                    .unwrap()
-                    .insert(job.job_id as u64, job.clone());
+                    let id=job.job_id;
+                    output_well.push_blocking(job);
+                    println!("[INFO] Job {} 推入输出井", id);
+                }
+            });
+        }
 
-                // 提交打印任务
-                match printer_clone.submit_task(job.clone()) {
-                    Ok(_) => {
-                        // 打印成功，更新状态为完成
-                        job.complete();
-                        status_map
-                            .lock()
-                            .unwrap()
-                            .insert(job.job_id as u64, job.clone());
-                        // 放入输出井
-                        output_well.push_blocking(job);
-                    }
-                    Err(_) => {
-                        // 打印失败，更新状态
-                        job.status = crate::job::JobStatus::SubmitFailed;
-                        status_map.lock().unwrap().insert(job.job_id as u64, job);
+        // 输出井 → 输出缓冲区
+        {
+            let output_well = self.output_well.clone();
+            let output_buffer = self.output_buffer.clone();
+            thread::spawn(move || {
+                loop {
+                    let job = output_well.pop_blocking(); // 阻塞
+                    println!("[INFO] 输出井中弹出 Job {}，推入输出缓冲区", job.job_id);
+                    output_buffer.push(job);
+                }
+            });
+        }
+
+        // 输出缓冲区 → 打印机
+        {
+            let output_buffer = self.output_buffer.clone();
+            let printer_arc = printer.clone();
+            let status_map = self.status_map.clone();
+
+            thread::spawn(move || {
+                loop {
+                    let job = output_buffer.pop(); // 阻塞
+
+                    println!(
+                        "[INFO] 输出缓冲区中获取 Job {}，准备检查打印机状态",
+                        job.job_id
+                    );
+
+                    loop {
+                        match printer_arc.get_status() {
+                            PrinterStatus::Free => {
+                                println!("[INFO] 打印机空闲，开始提交 Job {} 打印任务", job.job_id);
+                                let job_id = job.job_id;
+                                let mut job_clone = job.clone();
+                                let printer_clone = printer_arc.clone();
+                                let status_map = status_map.clone();
+
+                                thread::spawn(move || {
+                                    println!("[INFO] 打印线程启动：Job {}", job_id);
+                                    if printer_clone.submit_task(job_clone.clone()).is_ok() {
+                                        job_clone.complete();
+                                        println!(
+                                            "[SUCCESS] Job {} 打印成功，状态更新为已完成",
+                                            job_id
+                                        );
+                                    } else {
+                                        job_clone.status = JobStatus::SubmitFailed;
+                                        println!("[ERROR] Job {} 打印失败，状态更新为失败", job_id);
+                                    }
+
+                                    status_map.lock().unwrap().insert(job_id as u64, job_clone);
+                                });
+
+                                break; // 去取下一个任务
+                            }
+                            PrinterStatus::Printing => {
+                                // println!("[INFO] 打印机忙碌中，等待 Job {} 打印...", job.job_id);
+                                // 省略 sleep，如果 pop 是阻塞的，我们只重试检查状态
+                            }
+                        }
                     }
                 }
-            }
-        });
-
-        // 输出井→输出缓冲区转移线程
-        let output_well = self.output_well.clone();
-        let output_buffer = self.output_buffer.clone();
-        thread::spawn(move || {
-            loop {
-                let job = output_well.pop_blocking();
-                output_buffer.push(job);
-            }
-        });
+            });
+        }
     }
 }
-

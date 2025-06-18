@@ -1441,6 +1441,7 @@ dependencies = [
  "chrono",
  "genpdf",
  "serde",
+ "tokio",
 ]
 
 [[package]]

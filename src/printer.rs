@@ -1,10 +1,11 @@
-use crate::job::{Job, JobStatus};
+use crate::job::{Job};
 
-use chrono::Datelike;
-use chrono::Timelike;
+use std::thread;
+use std::time::Duration;
 
 use genpdf::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum PrinterStatus {
@@ -37,7 +38,7 @@ impl Printer{
         }
     }
 
-    pub fn set_status(&self, new_status: PrinterStatus) {
+    pub fn set_status(&mut self, new_status: PrinterStatus) {
         self.status.store(new_status as usize, Ordering::SeqCst);
     }
 
@@ -63,11 +64,14 @@ impl Printer{
 
         doc.render_to_file(&format!("{}.pdf", file_name))
             .expect("Failed to write PDF file");
+        
+        //模拟打印，一份文件等待10s
+        thread::sleep(Duration::from_secs(10));
+
         Ok(())
     }
 
-    pub fn submit_task(&self, job: Job) -> Result<(), ()> {
-        // 先尝试把状态从 Free(0) 改成 Printing(1)，如果当前不是Free就返回Err
+    pub fn submit_task(self: &Arc<Self>, job: Job) -> Result<usize, ()> {
         let prev_status = self.status.compare_exchange(
             PrinterStatus::Free as usize,
             PrinterStatus::Printing as usize,
@@ -76,24 +80,23 @@ impl Printer{
         );
 
         if prev_status.is_err() {
-            // 当前状态不是Free，打印机忙，拒绝执行
             return Err(());
         }
 
-        // 状态切换成功，执行打印
-        let mut res = String::new();
-        for (count, line) in job.file_content.lines().enumerate() {
-            res += &format!("{:>3}: {}\n", count + 1, line);
-        }
-        
-        self.print_file(&res, &job.file_name);
+        let job_id = job.job_id;
+        let job_clone = job.clone();
 
-        // 打印完成，状态重置为 Free
-        self.status.store(PrinterStatus::Free as usize, Ordering::SeqCst);
+        let printer_arc = Arc::clone(self);
+        thread::spawn(move || {
+            let mut res = String::new();
+            for (count, line) in job_clone.file_content.lines().enumerate() {
+                res += &format!("{:>3}: {}\n", count + 1, line);
+            }
+            let _ = printer_arc.print_file(&res, &job_clone.file_name);
+            printer_arc.status.store(PrinterStatus::Free as usize, Ordering::SeqCst);
+            printer_arc.printed_count.fetch_add(1, Ordering::SeqCst);
+        });
 
-        // 计数 +1
-        self.printed_count.fetch_add(1, Ordering::SeqCst);
-
-        Ok(())
+        Ok(job_id)
     }
 }

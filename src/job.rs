@@ -15,14 +15,14 @@ pub fn stats() -> (usize, usize) {
     )
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize,Clone)]
 pub enum JobStatus {
     Waiting,      // 等待打印
     Printing,     // 正在打印
     Completed,    // 打印完成
     SubmitFailed, // 提交失败
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize,Clone)]
 pub struct Job {
     pub job_id: usize,
     pub priority:u32,

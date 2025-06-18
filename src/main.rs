@@ -1,14 +1,15 @@
 mod job;
 mod printer;
 
-use actix_web::{web, App, HttpRequest, HttpServer, Responder, HttpResponse};
+use actix_web::{web, App, HttpServer, Responder, HttpResponse};
+use std::sync::Arc;
 use job::Job;
 use printer::Printer;
 use chrono::Utc;
-use std::sync::Mutex;
+
 
 struct AppState {
-    printer: Mutex<Printer>,
+    printer: Arc<printer::Printer>,
 }
 
 #[derive(serde::Deserialize)]
@@ -18,6 +19,7 @@ struct PrintRequest {
     file_content: String,
     color: bool,
 }
+
 
 async fn print_job(
     data: web::Data<AppState>,
@@ -30,30 +32,23 @@ async fn print_job(
         req.file_content.clone(),
         req.color,
     );
-    let printer = data.printer.lock().unwrap();
-    match printer.submit_task(job) {
-        Ok(_) => HttpResponse::Ok().body("打印任务提交成功"),
+    match data.printer.submit_task(job) {
+        Ok(job_id) => HttpResponse::Ok().body(format!("打印任务提交成功，任务ID: {}", job_id)),
         Err(_) => HttpResponse::Conflict().body("打印机正忙，请稍后再试"),
     }
 }
 
-async fn greet(req: HttpRequest) -> impl Responder {
-    let name = req.match_info().get("name").unwrap_or("World");
-    format!("Hello {}!", &name)
-}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let printer = Printer::new();
+    let printer = Arc::new(Printer::new());
     let app_state = web::Data::new(AppState {
-        printer: Mutex::new(printer),
+        printer: printer.clone(),
     });
 
     HttpServer::new(move || {
         App::new()
             .app_data(app_state.clone())
-            .route("/", web::get().to(greet))
-            .route("/{name}", web::get().to(greet))
             .route("/print", web::post().to(print_job))
     })
     .bind("127.0.0.1:8080")?

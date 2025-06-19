@@ -3,6 +3,8 @@ use crate::job::{Job};
 use genpdf::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum PrinterStatus {
@@ -63,7 +65,7 @@ impl Printer{
             .expect("Failed to write PDF file");
         
         //模拟打印，一份文件等待10s
-        // thread::sleep(Duration::from_secs(10));
+        thread::sleep(Duration::from_secs(5));
 
         Ok(())
     }

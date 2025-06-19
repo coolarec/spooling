@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*' # 当你推送像 'v1.0.0', 'v1.0.1' 这样的标签时触发
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build_and_release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 授予写入权限，以便创建 Release 和上传资产
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build Release
+      run: cargo build --release --verbose # 构建 Release 版本
+
+    - name: Package Release Binary
+      run: |
+        # 你的 Rust 可执行文件的名称通常是你的 crate 名称
+        # 假设你的 crate 名称是 'spooling'
+        # 对于 Linux，可执行文件通常在 target/release/spooling
+        # 如果是 Windows 或 macOS，文件名会有所不同 (例如 .exe)
+        # 这里我们为 Linux 打包
+        tar -czvf spooling-linux-x64.tar.gz -C target/release spooling
+      # 如果你需要支持多平台，可以在这里使用 matrix strategy 或为每个平台单独的 job
+
+    - name: Create Release
+      id: create_release
+      uses: softprops/action-gh-release@v2 # 使用一个流行的第三方 Action 来创建 Release
+      with:
+        tag_name: ${{ github.ref_name }} # 使用触发器推送的标签名作为 Release 的标签
+        name: Release ${{ github.ref_name }} # Release 的名称
+        body: |
+          # Release Notes for ${{ github.ref_name }}
+          
+          This is an automated release.
+          
+          You can add more detailed release notes here, e.g., by parsing commit messages.
+        draft: false # 是否是草稿 Release
+        prerelease: false # 是否是预发布 Release
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1 # 使用官方 Action 上传资产
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # GitHub 提供的默认令牌
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }} # 从上一步获取上传 URL
+        asset_path: ./spooling-linux-x64.tar.gz # 要上传的资产路径
+        asset_name: spooling-linux-x64.tar.gz # 资产的文件名
+        asset_content_type: application/gzip # 资产的内容类型

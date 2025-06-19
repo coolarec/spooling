@@ -6,7 +6,7 @@ use actix_web::{web, App, HttpServer, Responder, HttpResponse};
 use std::sync::Arc;
 use chrono::Utc;
 use osim::SPOOLing::{rawJob, SPOOLing};
-// use osim::NoSPOOLing::NoSPOOLing;
+use osim::NoSPOOLing::NoSPOOLing;
 use printer::Printer;
 use serde_json::json;
 
@@ -19,14 +19,14 @@ struct PrintRequest {
 }
 
 ///SPOOLing
-struct AppState {
-    spooling: Arc<SPOOLing>
-}
-
-///NoSPOOLing
 // struct AppState {
-//     spooling: Arc<NoSPOOLing>
+//     spooling: Arc<SPOOLing>
 // }
+
+// /NoSPOOLing
+struct AppState {
+    spooling: Arc<NoSPOOLing>
+}
 
 async fn submit_job(
     data: web::Data<AppState>,
@@ -133,19 +133,19 @@ async fn get_all_info(data: web::Data<AppState>) -> impl Responder {
 async fn main() -> std::io::Result<()> {
     // 创建打印机和 SPOOLing 系统
     let printer = Arc::new(Printer::new());
-    let spooling = Arc::new(SPOOLing::new(10, 10, 10, 10));
+    // let spooling = Arc::new(SPOOLing::new(10, 10, 10, 10));
 
-    // 启动 SPOOLing 工作线程
-    spooling.clone().start_workers(printer);
+    // // 启动 SPOOLing 工作线程
+    // spooling.clone().start_workers(printer);
 
-    let app_state = web::Data::new(AppState {
-        spooling: spooling.clone(),
-    });
-
-    // let nospooling=Arc::new(NoSPOOLing::new(printer));
-    // let app_state=web::Data::new(AppState{
-    //     spooling:nospooling,
+    // let app_state = web::Data::new(AppState {
+    //     spooling: spooling.clone(),
     // });
+
+    let nospooling=Arc::new(NoSPOOLing::new(printer));
+    let app_state=web::Data::new(AppState{
+        spooling:nospooling,
+    });
 
     HttpServer::new(move || {
         App::new()

@@ -7,7 +7,7 @@ use crate::osim::SPOOLing::rawJob;
 
 #[derive(Clone)]
 pub struct NoSPOOLing {
-    status_map: Arc<Mutex<HashMap<u64, Job>>>,
+    pub status_map: Arc<Mutex<HashMap<u64, Job>>>,
     printer:Arc<Printer>,
 }
 impl NoSPOOLing {
@@ -64,6 +64,20 @@ impl NoSPOOLing {
                 Err("缓冲区已满".to_string())
             }
         }
+    }
+    /// 获取所有提交成功的任务id
+    pub fn get_active_job_id(&self)-> Vec<u64>{
+        let status_map = self.status_map.lock().unwrap();
+        status_map
+            .iter()
+            .filter_map(|(&job_id, job)| {
+                if job.status != JobStatus::SubmitFailed {
+                    Some(job_id)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
 }

@@ -2,7 +2,6 @@ name: CI/CD Release
 
 on:
   push:
-    # 当推送到 master 分支或任何以 'v' 开头的标签时触发
     branches:
       - 'master'
     tags:
@@ -15,117 +14,109 @@ jobs:
   build_for_release:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest] # 定义要构建的操作系统
+        os: [ubuntu-latest, macos-latest, windows-latest]
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             archive_ext: .tar.gz
-            archive_cmd: tar -czvf
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            archive_ext: .tar.gz
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             archive_ext: .zip
-            archive_cmd: 7z a
-          - os: macos-latest
-            target: x86_64-apple-darwin # 或者 aarch64-apple-darwin 如果需要 M1
-            archive_ext: .tar.gz
-            archive_cmd: tar -czvf
-    
+
     runs-on: ${{ matrix.os }}
     permissions:
-      contents: write # 授予写入权限，以便后续步骤创建 Release 和上传资产
+      contents: write
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    # 安装 Rust 工具链
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
-        target: ${{ matrix.target }}
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
 
-    # 如果是 Windows，安装 7-Zip
-    - name: Install 7-Zip (Windows)
-      if: runner.os == 'Windows'
-      run: choco install 7zip.install
+      - name: Install 7-Zip (Windows)
+        if: runner.os == 'Windows'
+        run: choco install 7zip.install
 
-    - name: Build Release Binary
-      run: cargo build --release --verbose --target ${{ matrix.target }}
+      - name: Build Release Binary
+        run: cargo build --release --verbose --target ${{ matrix.target }}
 
-    - name: Package Release Binary
-      id: package_binary
-      run: |
-        BINARY_NAME="spooling" # 替换为你的 Rust crate 名称
-        ASSET_NAME="${BINARY_NAME}-${{ matrix.target }}${{ matrix.archive_ext }}"
-        
-        case ${{ matrix.os }} in
-          ubuntu-latest|macos-latest)
-            ${{ matrix.archive_cmd }} "${ASSET_NAME}" -C target/${{ matrix.target }}/release "${BINARY_NAME}"
-            ;;
-          windows-latest)
-            # 对于 Windows，可执行文件有 .exe 扩展名
-            ${{ matrix.archive_cmd }} "${ASSET_NAME}" target/${{ matrix.target }}/release/"${BINARY_NAME}.exe"
-            ;;
-        esac
-        echo "ASSET_PATH=${ASSET_NAME}" >> $GITHUB_ENV # 将资产路径设置为环境变量
+      - name: Prepare Artifact Folder
+        run: |
+          mkdir package
+          BINARY_NAME=spooling
 
-    - name: Upload Build Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ github.sha }}-${{ matrix.os }} # Artifact 名称包含 commit SHA 和 OS
-        path: ${{ env.ASSET_PATH }} # 上传打包好的二进制文件
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp target/${{ matrix.target }}/release/${BINARY_NAME}.exe package/
+          else
+            cp target/${{ matrix.target }}/release/${BINARY_NAME} package/
+          fi
+
+          cp -r fonts package/
+
+        shell: bash
+
+      - name: Compress Artifacts
+        run: |
+          BINARY_NAME=spooling
+          ARCHIVE_NAME=${BINARY_NAME}-${{ matrix.target }}${{ matrix.archive_ext }}
+
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            powershell Compress-Archive -Path package\* -DestinationPath $ARCHIVE_NAME
+          else
+            tar -czvf $ARCHIVE_NAME -C package .
+          fi
+
+          echo "ASSET_PATH=$ARCHIVE_NAME" >> $GITHUB_ENV
+
+        shell: bash
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.sha }}-${{ matrix.os }}
+          path: ${{ env.ASSET_PATH }}
 
   create_github_release:
-    needs: build_for_release # 确保在所有构建完成后才执行
+    needs: build_for_release
     runs-on: ubuntu-latest
     permissions:
-      contents: write # 授予写入权限，以便创建 Release 和上传资产
+      contents: write
 
-    # 只有当推送的是标签时才创建 Release
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
 
     steps:
-    - name: Create Release
-      id: create_release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ github.ref_name }} # 使用触发器推送的标签名作为 Release 的标签
-        name: Release ${{ github.ref_name }} # Release 的名称
-        body: |
-          # Release Notes for ${{ github.ref_name }}
-          
-          This is an automated release.
-          
-          ## Changes
-          
-          * Add your release notes here.
-          * For example, you can list new features, bug fixes, or improvements.
-        draft: false # 是否是草稿 Release
-        prerelease: false # 是否是预发布 Release
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          body: |
+            # Release Notes for ${{ github.ref_name }}
 
-    - name: Download all build artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: ./artifacts # 下载所有产物到此目录
+            This is an automated release.
 
-    - name: Upload Release Assets
-      run: |
-        UPLOAD_URL="${{ steps.create_release.outputs.upload_url }}"
-        # 遍历下载的每个产物文件，并上传到 Release
-        for dir in ./artifacts/*; do
-          if [ -d "$dir" ]; then
-            for file in "$dir"/*; do
-              if [ -f "$file" ]; then
-                echo "Uploading $file to release..."
-                ASSET_NAME=$(basename "$file")
-                curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                     -H "Content-Type: application/octet-stream" \
-                     --data-binary "@$file" \
-                     "$UPLOAD_URL?name=$ASSET_NAME"
-              fi
-            done
-          fi
-        done
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            ## Changes
+
+            * Add your release notes here.
+            * For example, you can list new features, bug fixes, or improvements.
+          draft: false
+          prerelease: false
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./artifacts/**/*.tar.gz
+                 ./artifacts/**/*.zip

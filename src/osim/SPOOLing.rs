@@ -198,7 +198,7 @@ pub struct SPOOLing {
     input_well: HeapWell<Job>,
     output_well: HeapWell<Job>,
     output_buffer: Buffer<Job>,
-    status_map: Arc<Mutex<HashMap<u64, Job>>>,
+    pub status_map: Arc<Mutex<HashMap<u64, Job>>>,
 }
 
 impl SPOOLing {
@@ -338,21 +338,32 @@ impl SPOOLing {
 
             thread::spawn(move || {
                 loop {
-                    // print!("push---------\n");
                     let job = output_buffer.pop(); // 阻塞
-                    // print!("push down---------\n");
                     let job_id = job.job_id;
                     let mut job_clone = job.clone();
                     let printer_clone = printer_arc.clone();
                     let status_map = status_map.clone();
 
                     println!("[INFO] 打印线程启动：Job {}", job_id);
-                    if printer_clone.submit_task(job_clone.clone()).is_ok() {
-                        job_clone.complete();
-                        println!("[SUCCESS] Job {} 打印成功，状态更新为已完成", job_id);
-                    } else {
-                        job_clone.status = JobStatus::SubmitFailed;
-                        println!("[ERROR] Job {} 打印失败，状态更新为失败", job_id);
+                    let start_time=Some(Utc::now());
+                    match printer_clone.submit_task(job_clone.clone()) {
+                        Ok(_) => {
+                            job_clone.start_print_time = start_time;
+                            // 打印完成
+                            job_clone.complete();
+                            job_clone.end_print_time = Some(Utc::now());
+                            println!("[SUCCESS] Job {} 打印成功，状态更新为已完成", job_id);
+                            let mut map = status_map.lock().unwrap();
+                            map.insert(job_id.try_into().unwrap(), job_clone.clone());
+                        }
+                        Err(_) => {
+                            // job_clone.start_print_time = Some(Utc::now());
+                            job_clone.status = JobStatus::SubmitFailed;
+                            // job_clone.end_print_time = Some(Utc::now());
+                            println!("[ERROR] Job {} 打印失败，状态更新为失败", job_id);
+                            let mut map = status_map.lock().unwrap();
+                            map.insert(job_id.try_into().unwrap(), job_clone.clone());
+                        }
                     }
                 }
             });
@@ -373,5 +384,4 @@ impl SPOOLing {
             })
             .collect()
     }
-
 }

@@ -1,8 +1,5 @@
 use crate::job::{Job};
 
-use std::thread;
-use std::time::Duration;
-
 use genpdf::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;

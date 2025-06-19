@@ -15,6 +15,7 @@ use actix_web::error::ErrorInternalServerError;
 use actix_web::web::Bytes;
 use futures_util::stream::once;
 use std::fs;
+use std::path::Path;
 use std::io::{Cursor, Write};
 use std::path::PathBuf;
 use zip::write::FileOptions; // 只需加这一行
@@ -196,6 +197,20 @@ async fn download_all_files(data: web::Data<AppState>) -> Result<HttpResponse, a
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+
+        // 检查 fonts 文件夹是否存在
+    if !Path::new("fonts").exists() {
+        eprintln!("错误：fonts 文件夹不存在，请先准备字体文件！");
+        std::process::exit(1);
+    }
+
+    // 检查 output 文件夹是否存在，不存在则自动创建
+    if !Path::new("output").exists() {
+        fs::create_dir("output")?;
+        println!("output 文件夹不存在，已自动创建。");
+    }
+
+
     // 创建打印机和 SPOOLing 系统
     let printer = Arc::new(Printer::new());
     let spooling = Arc::new(SPOOLing::new(10, 10, 10, 10));

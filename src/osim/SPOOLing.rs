@@ -1,12 +1,12 @@
 use crate::job::{Job, JobStatus};
-use crate::printer::{Printer, PrinterStatus};
+use crate::printer::Printer;
 use chrono::{DateTime, Utc};
 use std::cmp::Ordering;
 use std::cmp::Reverse; // 用于反转比较实现小根堆
 use std::collections::BinaryHeap;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Condvar, Mutex};
-use std::{thread, time::Duration};
+use std::thread;
 
 pub struct rawJob {
     pub priority: u32,
@@ -358,4 +358,20 @@ impl SPOOLing {
             });
         }
     }
+
+    /// 获取所有提交成功的任务id
+    pub fn get_active_job_id(&self)-> Vec<u64>{
+        let status_map = self.status_map.lock().unwrap();
+        status_map
+            .iter()
+            .filter_map(|(&job_id, job)| {
+                if job.status != JobStatus::SubmitFailed {
+                    Some(job_id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
 }

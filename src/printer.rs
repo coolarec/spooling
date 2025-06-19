@@ -71,7 +71,7 @@ impl Printer{
         Ok(())
     }
 
-    pub fn submit_task(self: &Arc<Self>, job: Job) -> Result<usize, ()> {
+    pub fn submit_task(self: &Arc<Self>, job: Job) -> Result<usize, Job> {
         let prev_status = self.status.compare_exchange(
             PrinterStatus::Free as usize,
             PrinterStatus::Printing as usize,
@@ -80,7 +80,7 @@ impl Printer{
         );
 
         if prev_status.is_err() {
-            return Err(());
+            return Err(job);
         }
 
         let job_id = job.job_id;

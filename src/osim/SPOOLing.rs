@@ -14,6 +14,7 @@ pub struct rawJob {
     pub submit_time: DateTime<Utc>,
     pub file_content: String,
     pub color: bool,
+    pub problem_name:String,
 }
 
 // 实现 PartialEq 和 Eq
@@ -243,6 +244,7 @@ impl SPOOLing {
             data.submit_time,
             data.file_content,
             data.color,
+            data.problem_name
         );
 
         let job_id = job.job_id;

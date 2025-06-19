@@ -36,6 +36,7 @@ impl NoSPOOLing {
             data.submit_time,
             data.file_content,
             data.color,
+            data.problem_name,
         );
 
         let job_id = job.job_id;

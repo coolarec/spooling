@@ -19,6 +19,7 @@ use std::path::Path;
 use std::io::{Cursor, Write};
 use std::path::PathBuf;
 use zip::write::FileOptions; // 只需加这一行
+use chrono::{DateTime};
 
 #[derive(serde::Deserialize)]
 struct PrintRequest {
@@ -26,6 +27,7 @@ struct PrintRequest {
     team_name: String,
     file_content: String,
     color: bool,
+    problem_name:String,
 }
 
 //SPOOLing
@@ -45,6 +47,7 @@ async fn submit_job(data: web::Data<AppState>, req: web::Json<PrintRequest>) -> 
         submit_time: Utc::now(),
         file_content: req.file_content.to_string(),
         color: req.color,
+        problem_name:req.problem_name.to_string(),
     };
 
     match data.spooling.submit_job(raw_job) {
@@ -100,13 +103,28 @@ struct JobIdRequest {
 }
 async fn get_job_info(data: web::Data<AppState>, req: web::Json<JobIdRequest>) -> impl Responder {
     let job_id = req.id;
-    // 假设你有 status_map 或类似结构存储所有 Job
-    // 这里以 spooling.status_map 为例
     let status_map = data.spooling.status_map.lock().unwrap();
+
     if let Some(job) = status_map.get(&job_id) {
+        let fmt = |dt: &DateTime<_>| dt.format("%Y/%m/%d %H:%M:%S").to_string();
+
+        let json = json!({
+            "job_id": job.job_id,
+            "priority": job.priority,
+            "team_name": job.team_name,
+            "file_name": job.file_name,
+            "problem_name": job.problem_name,
+            "submit_time": fmt(&job.submit_time),
+            "file_content": job.file_content,
+            "color": job.color,
+            "status": job.status,
+            "start_print_time": job.start_print_time.as_ref().map(fmt),
+            "end_print_time": job.end_print_time.as_ref().map(fmt),
+        });
+
         HttpResponse::Ok().json(json!({
             "status": "success",
-            "data": job
+            "data": json
         }))
     } else {
         HttpResponse::NotFound().json(json!({
@@ -115,6 +133,7 @@ async fn get_job_info(data: web::Data<AppState>, req: web::Json<JobIdRequest>) -
         }))
     }
 }
+
 
 // 获取所有job的信息
 async fn get_all_info(data: web::Data<AppState>) -> impl Responder {

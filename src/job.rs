@@ -23,12 +23,16 @@ pub enum JobStatus {
     SubmitFailed, // 提交失败
 }
 
+
+
+
 #[derive(Debug, Serialize, Deserialize,Clone)]
 pub struct Job {
     pub job_id: usize,
     pub priority:u32,
     pub team_name:String,
     pub file_name: String,
+    pub problem_name:String,
     pub submit_time: DateTime<Utc>,
     pub file_content: String,
     pub color: bool,
@@ -44,6 +48,7 @@ impl Job {
         submit_time: DateTime<Utc>,
         file_content: String,
         color: bool,
+        problem_name:String,
     ) -> Self {
         let job_id=TOTAL_TASKS.fetch_add(1, AtomicOrdering::SeqCst);
         
@@ -55,6 +60,7 @@ impl Job {
             priority,
             team_name,
             file_name,
+            problem_name,
             submit_time,
             file_content,
             color,

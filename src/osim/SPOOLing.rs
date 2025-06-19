@@ -100,7 +100,11 @@ impl<T> Buffer<T> {
             // print!("4-------------\n");
         }
         // print!("5-------------\n");
-        queue.pop_front().unwrap()
+
+        let item = queue.pop_front().unwrap();
+        self.ready.notify_one();
+        // queue.pop_front().unwrap()
+        item
     }
 
     // 获取当前大小
@@ -213,6 +217,24 @@ impl SPOOLing {
         }
     }
 
+    pub fn get_status(&self) -> String {
+        let input_buffer_len = self.input_buffer.size();
+        let input_well_len = self.input_well.len();
+        let output_well_len = self.output_well.len();
+        let output_buffer_len = self.output_buffer.size();
+        let status_map_len = self.status_map.lock().unwrap().len();
+
+        format!(
+            "【系统状态】
+输入缓冲区: {} 个任务
+输入井: {} 个任务
+输出井: {} 个任务
+输出缓冲区: {} 个任务
+状态表: {} 个任务",
+            input_buffer_len, input_well_len, output_well_len, output_buffer_len, status_map_len
+        )
+    }
+
     pub fn submit_job(&self, data: rawJob) -> Result<usize, String> {
         // 创建新的 Job
         let mut job = Job::new(
@@ -316,9 +338,9 @@ impl SPOOLing {
 
             thread::spawn(move || {
                 loop {
-                    print!("push---------\n");
+                    // print!("push---------\n");
                     let job = output_buffer.pop(); // 阻塞
-                    print!("push down---------\n");
+                    // print!("push down---------\n");
                     let job_id = job.job_id;
                     let mut job_clone = job.clone();
                     let printer_clone = printer_arc.clone();

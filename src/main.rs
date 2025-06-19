@@ -40,6 +40,12 @@ async fn submit_job(
     }
 }
 
+async fn get_status(data: web::Data<AppState>) -> impl Responder {
+    let status = data.spooling.get_status();
+    HttpResponse::Ok().body(status)
+}
+
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     // 创建打印机和 SPOOLing 系统
@@ -57,6 +63,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(app_state.clone())
             .route("/print", web::post().to(submit_job))
+            .route("/status", web::get().to(get_status)) // 改为 GET 路由
     })
     .bind("127.0.0.1:8080")?
     .run()

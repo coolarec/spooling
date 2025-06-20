@@ -210,7 +210,7 @@ async fn download_all_files(data: web::Data<AppState>) -> Result<HttpResponse, a
         .streaming(stream))
 }
 
-
+#[derive(serde::Deserialize)]
 struct DeleteRequest{
     job_ids:Vec<u64>
 }

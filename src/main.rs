@@ -211,7 +211,13 @@ async fn download_all_files(data: web::Data<AppState>) -> Result<HttpResponse, a
 }
 
 
-
+async fn clear_all(data: web::Data<AppState>) -> impl Responder {
+    let mut status_map = data.spooling.status_map.lock().unwrap();
+    status_map.clear();
+    HttpResponse::Ok().json(json!({
+        "status": "success",
+    }))
+}
 
 
 #[actix_web::main]
@@ -257,6 +263,7 @@ async fn main() -> std::io::Result<()> {
             .route("/get_all_info", web::get().to(get_all_info))
             .route("/download_file", web::post().to(download_file))
             .route("/download_all", web::get().to(download_all_files))
+            .route("/clear_all", web::get().to(clear_all))
     })
     .bind("127.0.0.1:8080")?
     .run()

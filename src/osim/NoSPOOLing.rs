@@ -39,7 +39,7 @@ impl NoSPOOLing {
             data.problem_name,
         );
 
-        let job_id = job.job_id;
+        let job_id = job.clone().job_id;
         job.status = JobStatus::Waiting;
         let mut status_map = self.status_map.clone();
         status_map
@@ -48,9 +48,17 @@ impl NoSPOOLing {
             .insert(job.job_id as u64, job.clone());
 
         // 尝试推入输入缓冲区
-        match self.printer.submit_task(job) {
+        match self.printer.submit_task(job.clone()) {
             Ok(_) => {
+                let job_id = job.job_id.clone();
+                job.status = JobStatus::Completed;
+                let mut status_map = self.status_map.clone();
+                status_map
+                    .lock()
+                    .unwrap()
+                    .insert(job.clone().job_id as u64, job.clone());
                 println!("任务 {} 已开始打印", job_id);
+
                 Ok(job_id)
             }
             Err(mut job) => {

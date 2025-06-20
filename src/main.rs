@@ -210,9 +210,16 @@ async fn download_all_files(data: web::Data<AppState>) -> Result<HttpResponse, a
         .streaming(stream))
 }
 
-async fn clear_all(data: web::Data<AppState>) -> impl Responder {
+
+struct DeleteRequest{
+    job_ids:Vec<u64>
+}
+
+async fn clear_all(data: web::Data<AppState>, req: web::Json<DeleteRequest>) -> impl Responder {
     let mut status_map = data.spooling.status_map.lock().unwrap();
-    status_map.clear();
+    for job_id in &req.job_ids{
+        status_map.remove(&job_id);
+    }
     HttpResponse::Ok().json(json!({
         "status": "success",
     }))
@@ -263,7 +270,7 @@ async fn main() -> std::io::Result<()> {
             .route("/get_all_info", web::get().to(get_all_info))
             .route("/download_file", web::post().to(download_file))
             .route("/download_all", web::get().to(download_all_files))
-            .route("/clear_all", web::get().to(clear_all))
+            .route("/clear", web::post().to(clear_all))
     })
     .bind("127.0.0.1:8080")?
     .run()

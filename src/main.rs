@@ -31,14 +31,14 @@ struct PrintRequest {
 }
 
 //SPOOLing
-struct AppState {
-    spooling: Arc<SPOOLing>
-}
-
-// /NoSPOOLing
 // struct AppState {
-//     spooling: Arc<NoSPOOLing>,
+//     spooling: Arc<SPOOLing>
 // }
+
+// NoSPOOLing
+struct AppState {
+    spooling: Arc<NoSPOOLing>,
+}
 
 async fn submit_job(data: web::Data<AppState>, req: web::Json<PrintRequest>) -> impl Responder {
     let raw_job = rawJob {
@@ -210,7 +210,13 @@ async fn download_all_files(data: web::Data<AppState>) -> Result<HttpResponse, a
         .streaming(stream))
 }
 
-
+async fn clear_all(data: web::Data<AppState>) -> impl Responder {
+    let mut status_map = data.spooling.status_map.lock().unwrap();
+    status_map.clear();
+    HttpResponse::Ok().json(json!({
+        "status": "success",
+    }))
+}
 
 
 
@@ -232,19 +238,19 @@ async fn main() -> std::io::Result<()> {
 
     // 创建打印机和 SPOOLing 系统
     let printer = Arc::new(Printer::new());
-    let spooling = Arc::new(SPOOLing::new(10, 10, 10, 10));
+    // let spooling = Arc::new(SPOOLing::new(10, 10, 10, 10));
 
-    // 启动 SPOOLing 工作线程
-    spooling.clone().start_workers(printer);
+    // // 启动 SPOOLing 工作线程
+    // spooling.clone().start_workers(printer);
 
-    let app_state = web::Data::new(AppState {
-        spooling: spooling.clone(),
-    });
-
-    // let nospooling = Arc::new(NoSPOOLing::new(printer));
     // let app_state = web::Data::new(AppState {
-    //     spooling: nospooling,
+    //     spooling: spooling.clone(),
     // });
+
+    let nospooling = Arc::new(NoSPOOLing::new(printer));
+    let app_state = web::Data::new(AppState {
+        spooling: nospooling,
+    });
 
     HttpServer::new(move || {
         App::new()
@@ -257,6 +263,7 @@ async fn main() -> std::io::Result<()> {
             .route("/get_all_info", web::get().to(get_all_info))
             .route("/download_file", web::post().to(download_file))
             .route("/download_all", web::get().to(download_all_files))
+            .route("/clear_all", web::get().to(clear_all))
     })
     .bind("127.0.0.1:8080")?
     .run()

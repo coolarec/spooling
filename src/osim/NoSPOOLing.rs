@@ -1,29 +1,29 @@
-use crate::job::{Job,JobStatus};
-use crate::printer::{Printer,PrinterStatus};
+use crate::job::{Job, JobStatus};
+use crate::osim::SPOOLing::rawJob;
+use crate::printer::{Printer, PrinterStatus};
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use crate::osim::SPOOLing::rawJob;
 
 #[derive(Clone)]
 pub struct NoSPOOLing {
     pub status_map: Arc<Mutex<HashMap<u64, Job>>>,
-    printer:Arc<Printer>,
+    printer: Arc<Printer>,
 }
 impl NoSPOOLing {
-    pub fn new(printer:Arc<Printer>) -> Self {
+    pub fn new(printer: Arc<Printer>) -> Self {
         Self {
-            status_map: Arc::new( Mutex::new(HashMap::new())),
-            printer:printer,
+            status_map: Arc::new(Mutex::new(HashMap::new())),
+            printer: printer,
         }
     }
-    pub fn get_status(&self)->String{
-        let status=self.printer.clone().get_status();
+    pub fn get_status(&self) -> String {
+        let status = self.printer.clone().get_status();
         match status {
-            PrinterStatus::Free=>{
+            PrinterStatus::Free => {
                 format!("OK")
             }
-            PrinterStatus::Printing=>{
+            PrinterStatus::Printing => {
                 format!("OK")
             }
         }
@@ -48,8 +48,15 @@ impl NoSPOOLing {
             .insert(job.job_id as u64, job.clone());
 
         // 尝试推入输入缓冲区
-        match self.printer.submit_task(job) {
+        match self.printer.submit_task(job.clone()) {
             Ok(_) => {
+                let job_id = job.job_id.clone();
+                job.status = JobStatus::Completed;
+                let mut status_map = self.status_map.clone();
+                status_map
+                    .lock()
+                    .unwrap()
+                    .insert(job.clone().job_id as u64, job.clone());
                 println!("任务 {} 已开始打印", job_id);
                 Ok(job_id)
             }
@@ -67,7 +74,7 @@ impl NoSPOOLing {
         }
     }
     /// 获取所有提交成功的任务id
-    pub fn get_active_job_id(&self)-> Vec<u64>{
+    pub fn get_active_job_id(&self) -> Vec<u64> {
         let status_map = self.status_map.lock().unwrap();
         status_map
             .iter()
@@ -80,5 +87,4 @@ impl NoSPOOLing {
             })
             .collect()
     }
-
 }

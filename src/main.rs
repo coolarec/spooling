@@ -2,7 +2,7 @@ mod job;
 mod osim;
 mod printer;
 
-use actix_web::{App, HttpResponse, HttpServer, Responder, Result, Error, web};
+use actix_web::{App, Error, HttpResponse, HttpServer, Responder, Result, web};
 use chrono::Utc;
 use osim::NoSPOOLing::NoSPOOLing;
 use osim::SPOOLing::{SPOOLing, rawJob};
@@ -13,13 +13,13 @@ use std::sync::Arc;
 use actix_files::NamedFile;
 use actix_web::error::ErrorInternalServerError;
 use actix_web::web::Bytes;
+use chrono::DateTime;
 use futures_util::stream::once;
 use std::fs;
-use std::path::Path;
 use std::io::{Cursor, Write};
+use std::path::Path;
 use std::path::PathBuf;
 use zip::write::FileOptions; // 只需加这一行
-use chrono::{DateTime};
 
 #[derive(serde::Deserialize)]
 struct PrintRequest {
@@ -27,12 +27,12 @@ struct PrintRequest {
     team_name: String,
     file_content: String,
     color: bool,
-    problem_name:String,
+    problem_name: String,
 }
 
 //SPOOLing
 struct AppState {
-    spooling: Arc<SPOOLing>
+    spooling: Arc<SPOOLing>,
 }
 
 // /NoSPOOLing
@@ -47,7 +47,7 @@ async fn submit_job(data: web::Data<AppState>, req: web::Json<PrintRequest>) -> 
         submit_time: Utc::now(),
         file_content: req.file_content.to_string(),
         color: req.color,
-        problem_name:req.problem_name.to_string(),
+        problem_name: req.problem_name.to_string(),
     };
 
     match data.spooling.submit_job(raw_job) {
@@ -134,7 +134,6 @@ async fn get_job_info(data: web::Data<AppState>, req: web::Json<JobIdRequest>) -
     }
 }
 
-
 // 获取所有job的信息
 async fn get_all_info(data: web::Data<AppState>) -> impl Responder {
     let status_map = data.spooling.status_map.lock().unwrap();
@@ -153,7 +152,6 @@ async fn download_file(
     let job_id = req.id;
     let status_map = data.spooling.status_map.lock().unwrap();
     if let Some(job) = status_map.get(&job_id) {
-
         let file_path = PathBuf::from(format!("./output/{}.pdf", job.file_name));
         print!("./output/{}", job.clone().file_name);
         Ok(NamedFile::open(file_path)?)
@@ -162,7 +160,6 @@ async fn download_file(
         Err(actix_web::error::ErrorNotFound("Job not found"))
     }
 }
-
 
 async fn download_all_files(data: web::Data<AppState>) -> Result<HttpResponse, actix_web::Error> {
     // 拿所有任务，包括未完成的
@@ -178,8 +175,7 @@ async fn download_all_files(data: web::Data<AppState>) -> Result<HttpResponse, a
     let mut cursor = Cursor::new(Vec::new());
     {
         let mut zip = zip::ZipWriter::new(&mut cursor);
-        let options = FileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
+        let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
         for job in jobs {
             let file_path = format!("output/{}.pdf", job.file_name);
@@ -191,7 +187,10 @@ async fn download_all_files(data: web::Data<AppState>) -> Result<HttpResponse, a
                     zip.write_all(&content).map_err(ErrorInternalServerError)?;
                 }
                 Err(e) => {
-                    eprintln!("文件读取失败（可能是未完成任务或文件缺失）：{} -> {}", file_path, e);
+                    eprintln!(
+                        "文件读取失败（可能是未完成任务或文件缺失）：{} -> {}",
+                        file_path, e
+                    );
                     // 继续打包其他文件，不中断
                 }
             }
@@ -206,24 +205,30 @@ async fn download_all_files(data: web::Data<AppState>) -> Result<HttpResponse, a
 
     Ok(HttpResponse::Ok()
         .content_type("application/zip")
-        .append_header(("Content-Disposition", "attachment; filename=\"all_files.zip\""))
+        .append_header((
+            "Content-Disposition",
+            "attachment; filename=\"all_files.zip\"",
+        ))
         .streaming(stream))
 }
 
-
-async fn clear_all(data: web::Data<AppState>) -> impl Responder {
+#[derive(serde::Deserialize)]
+struct DeleteRequest {
+    job_ids: Vec<u64>,
+}
+async fn clear_all(data: web::Data<AppState>, req: web::Json<DeleteRequest>) -> impl Responder {
     let mut status_map = data.spooling.status_map.lock().unwrap();
-    status_map.clear();
+    for job_id in &req.job_ids{
+        status_map.remove(&job_id);
+    }
     HttpResponse::Ok().json(json!({
         "status": "success",
     }))
 }
 
-
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-
-        // 检查 fonts 文件夹是否存在
+    // 检查 fonts 文件夹是否存在
     if !Path::new("fonts").exists() {
         eprintln!("错误：fonts 文件夹不存在，请先准备字体文件！");
         std::process::exit(1);
@@ -234,7 +239,6 @@ async fn main() -> std::io::Result<()> {
         fs::create_dir("output")?;
         println!("output 文件夹不存在，已自动创建。");
     }
-
 
     // 创建打印机和 SPOOLing 系统
     let printer = Arc::new(Printer::new());
@@ -263,7 +267,7 @@ async fn main() -> std::io::Result<()> {
             .route("/get_all_info", web::get().to(get_all_info))
             .route("/download_file", web::post().to(download_file))
             .route("/download_all", web::get().to(download_all_files))
-            .route("/clear_all", web::get().to(clear_all))
+            .route("/clear", web::post().to(clear_all))
     })
     .bind("127.0.0.1:8080")?
     .run()

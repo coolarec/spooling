@@ -14,7 +14,7 @@ pub struct rawJob {
     pub submit_time: DateTime<Utc>,
     pub file_content: String,
     pub color: bool,
-    pub problem_name:String,
+    pub problem_name: String,
 }
 
 // 实现 PartialEq 和 Eq
@@ -171,6 +171,7 @@ impl<T: Ord> HeapWell<T> {
         while heap.is_empty() {
             heap = self.ready.wait(heap).unwrap();
         }
+        self.ready.notify_one();
         heap.pop().unwrap().0
     }
 
@@ -244,7 +245,7 @@ impl SPOOLing {
             data.submit_time,
             data.file_content,
             data.color,
-            data.problem_name
+            data.problem_name,
         );
 
         let job_id = job.job_id;
@@ -321,59 +322,59 @@ impl SPOOLing {
 
         // 输出井 → 输出缓冲区
         {
-            let output_well = self.output_well.clone();
-            let output_buffer = self.output_buffer.clone();
-            thread::spawn(move || {
-                loop {
-                    let job = output_well.pop_blocking(); // 阻塞
-                    println!("[INFO] 输出井中弹出 Job {}，推入输出缓冲区", job.job_id);
-                    output_buffer.push(job);
-                }
-            });
+let output_well = self.output_well.clone();
+let output_buffer = self.output_buffer.clone();
+thread::spawn(move || {
+    loop {
+        let job = output_well.pop_blocking(); // 阻塞
+        println!("[INFO] 输出井中弹出 Job {}，推入输出缓冲区", job.job_id);
+        output_buffer.push(job);
+    }
+});
         }
 
         // 输出缓冲区 → 打印机
         {
-            let output_buffer = self.output_buffer.clone();
-            let printer_arc = printer.clone();
-            let status_map = self.status_map.clone();
+let output_buffer = self.output_buffer.clone();
+let printer_arc = printer.clone();
+let status_map = self.status_map.clone();
 
-            thread::spawn(move || {
-                loop {
-                    let job = output_buffer.pop(); // 阻塞
-                    let job_id = job.job_id;
-                    let mut job_clone = job.clone();
-                    let printer_clone = printer_arc.clone();
-                    let status_map = status_map.clone();
+thread::spawn(move || {
+    loop {
+        let job = output_buffer.pop(); // 阻塞
+        let job_id = job.job_id;
+        let mut job_clone = job.clone();
+        let printer_clone = printer_arc.clone();
+        let status_map = status_map.clone();
 
-                    println!("[INFO] 打印线程启动：Job {}", job_id);
-                    let start_time=Some(Utc::now());
-                    match printer_clone.submit_task(job_clone.clone()) {
-                        Ok(_) => {
-                            job_clone.start_print_time = start_time;
-                            // 打印完成
-                            job_clone.complete();
-                            job_clone.end_print_time = Some(Utc::now());
-                            println!("[SUCCESS] Job {} 打印成功，状态更新为已完成", job_id);
-                            let mut map = status_map.lock().unwrap();
-                            map.insert(job_id.try_into().unwrap(), job_clone.clone());
-                        }
-                        Err(_) => {
-                            // job_clone.start_print_time = Some(Utc::now());
-                            job_clone.status = JobStatus::SubmitFailed;
-                            // job_clone.end_print_time = Some(Utc::now());
-                            println!("[ERROR] Job {} 打印失败，状态更新为失败", job_id);
-                            let mut map = status_map.lock().unwrap();
-                            map.insert(job_id.try_into().unwrap(), job_clone.clone());
-                        }
-                    }
-                }
-            });
+        println!("[INFO] 打印线程启动：Job {}", job_id);
+        let start_time = Some(Utc::now());
+        match printer_clone.submit_task(job_clone.clone()) {
+            Ok(_) => {
+                job_clone.start_print_time = start_time;
+                // 打印完成
+                job_clone.complete();
+                job_clone.end_print_time = Some(Utc::now());
+                println!("[SUCCESS] Job {} 打印成功，状态更新为已完成", job_id);
+                let mut map = status_map.lock().unwrap();
+                map.insert(job_id.try_into().unwrap(), job_clone.clone());
+            }
+            Err(_) => {
+                // job_clone.start_print_time = Some(Utc::now());
+                job_clone.status = JobStatus::SubmitFailed;
+                // job_clone.end_print_time = Some(Utc::now());
+                println!("[ERROR] Job {} 打印失败，状态更新为失败", job_id);
+                let mut map = status_map.lock().unwrap();
+                map.insert(job_id.try_into().unwrap(), job_clone.clone());
+            }
+        }
+    }
+});
         }
     }
 
     /// 获取所有提交成功的任务id
-    pub fn get_active_job_id(&self)-> Vec<u64>{
+    pub fn get_active_job_id(&self) -> Vec<u64> {
         let status_map = self.status_map.lock().unwrap();
         status_map
             .iter()

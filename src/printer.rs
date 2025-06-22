@@ -86,15 +86,26 @@ impl Printer{
         let job_clone = job.clone();
 
         let printer_arc = Arc::clone(self);
-        // thread::spawn(move || {
-        let mut res = String::new();
-        for (count, line) in job_clone.file_content.lines().enumerate() {
-            res += &format!("{:>3}: {}\n", count + 1, line);
-        }
-        let _ = printer_arc.print_file(&res, &job_clone.file_name);
-        printer_arc.status.store(PrinterStatus::Free as usize, Ordering::SeqCst);
-        printer_arc.printed_count.fetch_add(1, Ordering::SeqCst);
-        // });
+
+        tokio::spawn(async move {
+            let mut res = String::new();
+            for (count, line) in job_clone.file_content.lines().enumerate() {
+                res += &format!("{:>3}: {}\n", count + 1, line);
+            }
+
+            let printer_arc2 = Arc::clone(&printer_arc); // ✅ clone 一份进去
+            let print_result = tokio::task::spawn_blocking(move || {
+                printer_arc2.print_file(&res, &job_clone.file_name)
+            })
+            .await;
+
+            printer_arc.status.store(PrinterStatus::Free as usize, Ordering::SeqCst);
+            printer_arc.printed_count.fetch_add(1, Ordering::SeqCst);
+
+            if let Err(e) = print_result {
+                eprintln!("打印任务 {} 执行失败: {:?}", job_id, e);
+            }
+        });
 
         Ok(job_id)
     }
